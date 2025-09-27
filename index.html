@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Phaser 3 – Preset + Asset personalizzati</title>
+<style>
+  html,body{height:100%;margin:0;background:#0b0e14;color:#eaeaea;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial}
+  #game{display:flex;align-items:center;justify-content:center;height:100vh}
+  .panel{position:fixed;top:12px;left:12px;background:rgba(0,0,0,.35);padding:8px 12px;border-radius:10px;font-size:14px;backdrop-filter:blur(6px)}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.js"></script>
+</head>
+<body>
+<div id="game"></div>
+<div class="panel"><strong>Comandi:</strong> WASD/frecce, Spazio spara, P pausa, R restart.</div>
+
+<script>
+// ASSET 
+const ASSETS = {
+  enabled: true,            // false = usa sempre le forme
+  player:   "assets/fornaseiro.png",             // es: "assets/player.png"
+  // disabilitiamo l'asset dei proiettili così verrà usato il rettangolo di fallback
+  bullet:   "",             // lasciare stringa vuota per usare la forma default
+  chaser:   "assets/chaser.png",             // es: "assets/chaser.png"
+  drifter:  "assets/drifter.png",             // es: "assets/drifter.png"
+  sweeper:  "assets/sweeper.png",             // es: "assets/sweeper.png"
+  diver:    "assets/diver.png",             // es: "assets/diver.png"
+  shooter:  "assets/shooter.png",             // es: "assets/shooter.png"
+  heart:    "assets/heart.png",             // es: "assets/heart.png"
+  boss:     "assets/boss.png",             // es: "assets/boss.png"
+  
+  explosionSheet: "",
+  explosionFrameW: 64,
+  explosionFrameH: 64,
+ 
+  scales: {
+    // Valori intermedi: i personaggi risultano più grandi della versione originale ma molto più piccoli della prima iterazione.
+    // Il giocatore occupa circa 40px di larghezza (598 * 0.067 ≈ 40).
+    player: 0.067,
+    // Usiamo la forma fallback per i proiettili, quindi la scala rimane 1 per non deformarli
+    bullet: 1.0,
+    // Nemici: valori calibrati per una larghezza visibile intorno ai 35–40px
+    chaser: 0.094,
+    drifter: 0.098,
+    sweeper: 0.102,
+    diver: 0.081,
+    shooter: 0.081,
+    // Il cono gelato delle vite sarà circa 19px di larghezza (77 * 0.25 ≈ 19)
+    heart: 0.25,
+    explosion: 2.0
+    ,
+  
+  },
+  // hitbox: valori aggiornati per adattarsi ai nuovi scale
+  hitbox: {
+    player: {type:'circle', radius: 20},
+    bullet: {type:'box', width:8, height:14},
+    enemy:  {type:'circle', radius: 18},
+    heart:  {type:'circle', radius: 10}
+    ,
+        boss:   {type:'circle', radius: 40}
+  }
+};
+
+
+function circleTex(scene,key,r,fill,stroke){
+  var g=scene.add.graphics(); g.fillStyle(fill||0xffffff,1); g.fillCircle(r,r,r);
+  if(stroke){ g.lineStyle(3,stroke,1); g.strokeCircle(r,r,r); }
+  g.generateTexture(key,r*2,r*2); g.destroy();
+}
+function rectTex(scene,key,w,h,fill,stroke){
+  var g=scene.add.graphics(); g.fillStyle(fill||0xffffff,1); g.fillRoundedRect(0,0,w,h,Math.min(w,h)*0.2);
+  if(stroke){ g.lineStyle(3,stroke,1); g.strokeRoundedRect(0,0,w,h,Math.min(w,h)*0.2); }
+  g.generateTexture(key,w,h); g.destroy();
+}
+function hypot(dx,dy){ return Math.sqrt(dx*dx+dy*dy); }
+
+
+var W=900,H=600;
+var PLAYER={SPEED:260, FIRE_CD:200, MAX_HP:5, START_HP:3};
+var BULLET={SPEED:640, LIFE:1200};
+var DIFF={BASE:1400, MIN:350, STEP_S:10, FACTOR:0.9};
+function speedScale(L){ return Math.min(1.0, 0.45 + 0.05*L); }
+function baseSpeed(type,L){
+  if(type==='CHASER')  return 90 + L*5;
+  if(type==='DRIFTER') return 55 + L*3;
+  if(type==='SWEEPER') return 80 + L*4;
+  if(type==='DIVER')   return 140 + L*6;
+  if(type==='SHOOTER') return 55 + L*3;
+  return 80 + L*4;
+}
+function capEnemies(L){ return Math.min(6 + Math.floor(L/2), 18); }
+function heartChance(L){ if(L<=4) return 0.06; if(L<=8) return 0.04; return 0.03; }
+
+
+var Boot= new Phaser.Class({
+  Extends: Phaser.Scene,
+  initialize:function(){ Phaser.Scene.call(this,{key:'boot'}); },
+  preload:function(){
+    if(!ASSETS.enabled) return;
+    function loadIf(scene,key,url){
+      if(url && url.trim()){ scene.load.image(key,url); return true; }
+      return false;
+    }
+    loadIf(this,'player', ASSETS.player);
+    loadIf(this,'bullet', ASSETS.bullet);
+    loadIf(this,'chaser', ASSETS.chaser);
+    loadIf(this,'drifter',ASSETS.drifter);
+    loadIf(this,'sweeper',ASSETS.sweeper);
+    loadIf(this,'diver',  ASSETS.diver);
+    loadIf(this,'shooter',ASSETS.shooter);
+    loadIf(this,'heart',  ASSETS.heart);
+    loadIf(this,'boss',   ASSETS.boss);
+
+    this.load.image('bg','assets/background.png');
+
+    
+    this.load.audio('hit', 'sound/hit.mp3');
+    this.load.audio('shoot', 'sound/shoot.mp3');
+
+    this.load.audio('boss_music', 'sound/boss.mp3');
+    this.load.audio('boss_hit',   'sound/boss_hit.mp3');
+    this.load.audio('boss_explode','sound/boss_explode.mp3');
+
+    this.load.audio('boss_segment_loss','sound/boss_segment.mp3');
+    this.load.audio('boss_finish','sound/boss_finish.mp3');
+
+    if(ASSETS.explosionSheet && ASSETS.explosionSheet.trim()){
+      this.load.spritesheet('explosion', ASSETS.explosionSheet, {
+        frameWidth: ASSETS.explosionFrameW||64,
+        frameHeight: ASSETS.explosionFrameH||64
+      });
+    }
+  },
+  create:function(){
+    // Fallback textures per i porcodii mancanti
+    if(!this.textures.exists('player'))  circleTex(this,'player',16,0x76e4f7,0x0ea5e9);
+    if(!this.textures.exists('bullet'))  rectTex(this,'bullet',8,14,0xffffff);
+    if(!this.textures.exists('chaser'))  circleTex(this,'chaser',14,0xff7b7b,0xdb2777);
+    if(!this.textures.exists('drifter')) rectTex(this,'drifter',24,16,0xffd166,0xf59e0b);
+    if(!this.textures.exists('sweeper')) rectTex(this,'sweeper',18,18,0x60a5fa,0x2563eb);
+    if(!this.textures.exists('diver'))   circleTex(this,'diver',12,0x34d399,0x059669);
+    if(!this.textures.exists('shooter')) circleTex(this,'shooter',18,0xc4b5fd,0x7c3aed);
+    if(!this.textures.exists('heart'))   circleTex(this,'heart',10,0x22c55e,0x16a34a);
+
+    // Fallback boss
+    if(!this.textures.exists('boss'))    circleTex(this,'boss',24,0xfca311,0xfb8500);
+
+    if(this.textures.exists('explosion')){
+      this.anims.create({
+        key:'boom',
+        frames: this.anims.generateFrameNumbers('explosion',{start:0,end:7}),
+        frameRate: 18,
+        repeat: 0
+      });
+    }
+
+    this.scene.start('main');
+  }
+});
+
+
+var Player = new Phaser.Class({
+  Extends: Phaser.Physics.Arcade.Sprite,
+  initialize:function(scene,x,y){
+    Phaser.Physics.Arcade.Sprite.call(this,scene,x,y,'player');
+    scene.add.existing(this); scene.physics.add.existing(this);
+    // scala sprite se asset presente
+    if(ASSETS.enabled && ASSETS.player){ this.setScale(ASSETS.scales.player||1); }
+    // hitbox: usa l'intero sprite come corpo fisico, così coincide con la dimensione dell'immagine
+    this.setSize(this.displayWidth, this.displayHeight, true);
+    this.setCollideWorldBounds(true);
+    this.hp= Math.max(3, PLAYER.START_HP||3);
+    this.lastFired=0;
+  },
+  damageOnce:function(){
+    if(!this.active) return;
+    this.hp=Math.max(0,this.hp-1);
+    this.scene.flash(this); this.scene.events.emit('hp',this.hp);
+    if(this.hp<=0) this.scene.gameOver();
+  }
+});
+
+
+var Enemy = new Phaser.Class({
+  Extends: Phaser.Physics.Arcade.Sprite,
+  initialize:function Enemy(scene,x,y,tex,type,speed){
+    Phaser.Physics.Arcade.Sprite.call(this,scene,x,y,tex);
+    scene.add.existing(this); scene.physics.add.existing(this);
+    this.type=type; this.speed=speed; this.hp=1; this.fireCd=1100; this.lastShot=0;
+    // scale per tipo
+    if(ASSETS.enabled && ASSETS[tex]) this.setScale(ASSETS.scales[tex]||1);
+    // hitbox: usa il rettangolo intero dell'immagine per il corpo fisico
+    this.setSize(this.displayWidth, this.displayHeight, true);
+    this.t=0; this.amp=60; this.dir=(Math.random()<.5?-1:1); this.vy=100;
+  },
+  hit:function(){
+    if(!this.active) return;
+    this.hp -= 1; this.scene.flash(this);
+    if(this.hp<=0){
+      if(this.body) this.body.enable=false;
+      // esplosione
+      this.scene.spawnExplosion(this.x,this.y);
+      this.destroy();
+    }
+  }
+});
+
+// Classe Boss
+
+var Boss = new Phaser.Class({
+  Extends: Phaser.Physics.Arcade.Sprite,
+  initialize: function Boss(scene,x,y){
+    Phaser.Physics.Arcade.Sprite.call(this,scene,x,y,'boss');
+    scene.add.existing(this);
+    scene.physics.add.existing(this);
+    var scale = ASSETS.scales.boss;
+    if(!scale){ scale = (ASSETS.scales.chaser || 0.1) * 2.5; }
+    if(ASSETS.enabled && ASSETS.boss){ this.setScale(scale); } else { this.setScale(scale); }
+    this.setSize(this.displayWidth, this.displayHeight, true);
+    this.dir = 1;
+    this.dirY = 1;
+    // Tempo fra una raffica e l'altra
+    this.fireCd = 800;
+    this.lastShot = 0;
+    // Punti vita per ogni tacca
+    this.hpPerSegment = 10;
+    this.segments = 2;
+    this.hpRemaining = this.hpPerSegment * this.segments;
+    this.speed = 80;
+    this.setCollideWorldBounds(false);
+    this.setBounce(0,0);
+    this.segmentsCurrent = this.segments;
+    this.appearance = 1;
+  },
+  setStats:function(segments, appearance){
+    this.segments = segments;
+    this.hpRemaining = this.hpPerSegment * segments;
+    this.segmentsCurrent = segments;
+    this.appearance = appearance;
+    this.speed = 60 + appearance * 6;
+    this.fireCd = Math.max(400, 800 - appearance * 40);
+  },
+  updateBoss:function(t){
+    var halfW = this.displayWidth * 0.5;
+    var halfH = this.displayHeight * 0.5;
+    if(this.x - halfW <= 0){ this.dir = 1; }
+    if(this.x + halfW >= W){ this.dir = -1; }
+    if(this.y - halfH <= 0){ this.dirY = 1; }
+    if(this.y + halfH >= H){ this.dirY = -1; }
+    this.body.setVelocity(this.dir * this.speed, this.dirY * this.speed * 0.6);
+    if(t > this.lastShot + this.fireCd){
+      this.lastShot = t;
+      var baseAngle = Phaser.Math.Angle.Between(this.x,this.y,this.scene.player.x,this.scene.player.y);
+      var numBullets = Math.min(1 + (this.appearance - 1), 5);
+      var spreadDeg = 15;
+      var startIndex = 0;
+      var endIndex = numBullets - 1;
+      for(var i=0;i<numBullets;i++){
+        var offsetDeg = (i - (numBullets - 1)/2) * spreadDeg;
+        var angle = baseAngle + Phaser.Math.DegToRad(offsetDeg);
+        this.scene.enemyShoot(this.x, this.y, angle);
+      }
+    }
+  },
+  // Subisce colpo  ..porco dio che palle.
+  takeHit:function(){
+    if(!this.active) return;
+    // memorizza il numero di segmenti prima del danno
+    var before = this.segmentsCurrent;
+    this.hpRemaining--;
+    // Calcola i segmenti rimasti dopo il colpo
+    var segmentsRemaining = Math.ceil(this.hpRemaining / this.hpPerSegment);
+    // Se è stata persa una tacca, aggiorna e riproduci il suono di perdita di segmento
+    if(segmentsRemaining < before){
+      this.segmentsCurrent = segmentsRemaining;
+      // emette il suono di perdita di segmento solo se rimangono tacche (>0).
+      // In questo modo l'ultima tacca non riproduce anche il suono di segment loss.
+      if(segmentsRemaining > 0){
+        if(this.scene.sound && this.scene.sound.play){
+          this.scene.sound.play('boss_segment_loss',{volume:1});
+        }
+      }
+    }
+    // mostra effetto colpo subito
+    if(this.scene && this.scene.flash){
+      this.scene.flash(this);
+    }
+    // Aggiorna la barra 
+    this.scene.updateBossBar(segmentsRemaining);
+    // Quando esauriche i punti vita, elimina il Fabioss, sta marda. 
+    if(this.hpRemaining <= 0){
+      this.scene.killBoss();
+    }
+  }
+});
+
+
+var Main= new Phaser.Class({
+  Extends: Phaser.Scene,
+  initialize:function(){ Phaser.Scene.call(this,{key:'main'}); },
+  init:function(){
+    this.level=1; this.score=0; this.elapsed=0; this.spawnDelay=DIFF.BASE;
+    // Variabili per il boss
+    this.bossActive = false;
+    this.bossCount = 0;
+    this.bossSpawnedForLevel = false;
+    this.nextBossMinionSpawn = 0;
+  },
+  create:function(){
+     this.add.image(W/2, H/2, 'bg').setDisplaySize(W,H).setDepth(-2);
+     this.add.rectangle(W/2, H/2, W, H, 0x000000, 0.35).setDepth(-1);
+
+    this.bullets=this.physics.add.group();
+    this.enemies=this.physics.add.group();
+    this.pickups=this.physics.add.group();
+
+    // Gruppo per il boss e per la sua barra di merda
+    this.bossGroup = this.physics.add.group();
+    this.bossBarGroup = this.add.group();
+    this.bossMusic = null;
+
+    var k=this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,SHIFT,CTRL,P,R');
+    this.keys=k;
+
+    this.player=new Player(this,W/2,H-80);
+
+    this.bulletKey='bullet';
+    this.bulletScale=(ASSETS.enabled&&ASSETS.bullet)?(ASSETS.scales.bullet||1):1;
+
+    // i-frames e stato (? rivedere)
+    this.playerHitCooldown = 700;
+    this.playerIframesUntil = this.time.now + 6000;
+    this.paused = false; this.pauseText = null; this.isGameOver = false;
+
+    var self=this;
+    // bullet -> enemy
+    this.physics.add.overlap(this.bullets,this.enemies,function(b,e){
+      if(!b.active||!e.active||self.isGameOver) return;
+      // disattiva e rimuove il proiettile
+      b.body.enable=false; b.destroy();
+      // suono di impatto
+      if(self.sound && self.sound.play){
+        self.sound.play('hit',{volume:1});
+      }
+      var ex=e.x, ey=e.y;
+      e.hit();
+      if(!e.active){
+        self.addScore(10);
+        if(Phaser.Math.FloatBetween(0,1)<heartChance(self.level)) self.dropHeart(ex,ey);
+      }
+    });
+
+    // enemy -> player
+    this.physics.add.overlap(this.player,this.enemies,function(){
+      if(self.isGameOver) return;
+      var now=self.time.now;
+      if(now < self.playerIframesUntil) return;
+      self.playerIframesUntil = now + self.playerHitCooldown;
+      self.player.damageOnce();
+    });
+
+    // pickup -> player
+    this.physics.add.overlap(this.player,this.pickups,function(p,it){
+      if(!it.active||self.isGameOver) return; it.destroy();
+      if(self.player.hp<PLAYER.MAX_HP){ self.player.hp++; self.events.emit('hp',self.player.hp); }
+      self.addScore(25);
+    });
+
+    // proiettile boss hit
+    this.physics.add.overlap(this.bullets,this.bossGroup,function(b,boss){
+      if(!b.active||!boss.active||self.isGameOver) return;
+      b.body.enable=false; b.destroy();
+      boss.takeHit();
+    });
+
+    // boss player collisione
+    this.physics.add.overlap(this.player,this.bossGroup,function(){
+      if(self.isGameOver) return;
+      if(!self.bossActive) return;
+      var now=self.time.now;
+      if(now < self.playerIframesUntil) return;
+      self.playerIframesUntil = now + self.playerHitCooldown;
+      self.player.damageOnce();
+    });
+
+    // UI
+    this.scoreTxt=this.add.text(12,H-26,'Score: 0',{fontSize:'16px',color:'#eaeaea'});
+    this.levelTxt=this.add.text(W-12,H-26,'Lv 1',{fontSize:'16px',color:'#eaeaea'}).setOrigin(1,0);
+    var i; this.hearts=[];
+    for(i=0;i<PLAYER.MAX_HP;i++){
+      this.hearts.push(this.add.image(W-20-i*22,18,'heart')
+        .setScale((ASSETS.enabled&&ASSETS.heart)?(ASSETS.scales.heart||1):1));
+    }
+    this.events.on('hp',(h)=>{ for(i=0;i<this.hearts.length;i++){ this.hearts[i].setAlpha(i<h?1:.25);} });
+
+    // ramp timer
+    this.nextSpawn=0;
+    this.time.addEvent({delay:1000,loop:true,callback:()=>{
+      if(this.paused||this.isGameOver) return;
+      this.elapsed++; if(this.elapsed%DIFF.STEP_S===0) this.ramp();
+    }});
+
+    // pausa soft
+    this.input.keyboard.on('keydown-P',()=>{
+      if(this.isGameOver) return;
+      this.paused=!this.paused; this.physics.world.isPaused=this.paused;
+      if(this.paused){ if(!this.pauseText) this.pauseText=this.add.text(W/2,H/2,'PAUSA',{fontSize:'32px',color:'#fff'}).setOrigin(0.5); }
+      else{ if(this.pauseText){ this.pauseText.destroy(); this.pauseText=null; } }
+    });
+
+    // restart
+    this.input.keyboard.on('keydown-R',()=>{
+      this.physics.world.isPaused=false; this.time.paused=false; this.scene.restart();
+    });
+
+    this.events.emit('hp',this.player.hp);
+  },
+
+  // HUD + ramp
+  addScore:function(v){ this.score+=v; this.scoreTxt.setText('Score: '+this.score); },
+  ramp:function(){
+    this.level++;
+    this.levelTxt.setText('Lv ' + this.level);
+    var steps=Math.floor(this.level/2);
+    this.spawnDelay=Math.max(DIFF.MIN, Math.floor(DIFF.BASE*Math.pow(0.96,steps)));
+    // ogni volta che il livello aumenta, il flag di spawn del boss viene azzerato
+    this.bossSpawnedForLevel = false;
+  },
+
+  // effetti
+  flash:function(o){ this.tweens.add({targets:o,duration:60,repeat:2,alpha:.2,yoyo:true}); },
+  spawnExplosion:function(x,y){
+    if(this.textures.exists('explosion')){
+      var s=this.add.sprite(x,y,'explosion').setScale(ASSETS.scales.explosion||1);
+      s.play('boom'); s.on('animationcomplete',()=>s.destroy());
+    }else{
+      // fallback: piccolo flash
+      var g=this.add.circle(x,y,12,0xfff3c4).setAlpha(0.9);
+      this.tweens.add({targets:g,alpha:0,scale:2,duration:200,onComplete:()=>g.destroy()});
+    }
+  },
+
+  // pickup
+  dropHeart:function(x,y){
+    var p=this.physics.add.image(x,y,'heart').setScale((ASSETS.enabled&&ASSETS.heart)?(ASSETS.scales.heart||1):1);
+    // hitbox cuore: usa tutto il rettangolo dell'immagine
+    p.setSize(p.displayWidth, p.displayHeight, true);
+    p.setVelocity(Phaser.Math.Between(-40,40),Phaser.Math.Between(-40,40));
+    p.setDrag(120,120); this.pickups.add(p);
+    this.time.delayedCall(6000,()=>{ if(p.active) p.destroy(); });
+  },
+
+  // proiettili su
+  spawnBullet:function(x,y){
+    if(this.isGameOver) return;
+    // riproduci effetto sonoro per lo sparo con volume ridotto
+    if(this.sound && this.sound.play){
+      this.sound.play('shoot',{volume:0.5});
+    }
+    var b=this.physics.add.image(x,y,this.bulletKey).setScale(this.bulletScale);
+    // hitbox: ingrandiamo notevolmente l'area di collisione del proiettile per evitare tunneling.
+    // La larghezza è ampliata a minimo 8px e l'altezza è quadruplicata rispetto all'altezza visibile
+    var newW = Math.max(8, b.displayWidth * 2);
+    var newH = b.displayHeight * 4;
+    b.setSize(newW, newH, true);
+    this.bullets.add(b);
+    b.setVelocity(0,-BULLET.SPEED); b.setAngle(-90); b.setDepth(2);
+    this.time.delayedCall(BULLET.LIFE,()=>{ if(b&&b.active) b.destroy(); });
+  },
+
+  // spawn dall'alto con shooter tardivi
+  spawnEnemy:function(){
+    if(this.isGameOver) return;
+    // Se il boss è attivo, limitiamo lo spawn dei minion secondo le regole.
+    if(this.bossActive){
+      var nowTime = this.time.now;
+      var L = this.level;
+      // prima del livello 36 non spawna nulla mentre il boss è in campo
+      if(L < 36) return;
+      // rispetta l'intervallo minimo di 10 secondi
+      if(nowTime < this.nextBossMinionSpawn) return;
+      // determina il numero massimo di minion permessi
+      var maxMinions = (L < 60) ? 2 : 5;
+      var activeMinions = this.enemies.countActive(true);
+      if(activeMinions >= maxMinions) return;
+      // aggiorna il prossimo momento in cui sarà consentito generare un minion
+      this.nextBossMinionSpawn = nowTime + 10000;
+    }
+    // margine di spawn (24) come nella versione originale; gli sprite sono piccoli
+    var m = 24;
+    var x = Phaser.Math.Between(m, W - m);
+    var y = m;
+    var L = this.level;
+
+    var wC = 0.28 + Math.min(0.22, L*0.02);
+    var wD = 0.28;
+    var wW = 0.22;
+    var wS = (L<4)? 0.00 : (L<8? 0.06 : Math.min(0.12, 0.06 + (L-8)*0.01));
+    var wV = 1 - (wC+wD+wW+wS);
+    var sum=wC+wD+wW+wV+wS; wC/=sum; wD/=sum; wW/=sum; wV/=sum; wS/=sum;
+
+    var r=Math.random(), acc=0, type='CHASER';
+    function pick(w){ acc+=w; return r<acc; }
+    if(pick(wC)) type='CHASER';
+    else if(pick(wD)) type='DRIFTER';
+    else if(pick(wW)) type='SWEEPER';
+    else if(pick(wV)) type='DIVER';
+    else type='SHOOTER';
+
+    // Se il boss è attivo, applichiamo restrizioni sui tipi
+    if(this.bossActive){
+      // prima del livello 60 non generare shooter
+      if(L < 60 && type === 'SHOOTER'){
+        type = 'CHASER';
+      }
+      // dopo il livello 60 limitiamo il numero di shooter contemporanei a 4
+      if(L >= 60){
+        var shooterCount = this.enemies.getChildren().filter(function(e){ return e.type === 'SHOOTER'; }).length;
+        if(type === 'SHOOTER' && shooterCount >= 4){
+          type = 'CHASER';
+        }
+      }
+    }
+
+    var v = Math.floor(baseSpeed(type,L) * speedScale(L));
+
+    var key = (type==='CHASER'?'chaser': type==='DRIFTER'?'drifter': type==='SWEEPER'?'sweeper': type==='DIVER'?'diver':'shooter');
+    var e=new Enemy(this,x,y,key,type,v);
+    // set velocità iniziale per alcune IA
+    if(type==='DRIFTER'){ e.t=0; e.amp=60; e.body.setVelocity(0,e.speed); }
+    if(type==='SWEEPER'){ e.dir=(Math.random()<.5?-1:1); e.vy=Math.max(70, Math.floor( (90+L*3) * speedScale(L) )); }
+    if(type==='DIVER'){ e.lockX=this.player.x; }
+    this.enemies.add(e);
+  },
+
+  enemyShoot:function(x,y,ang){
+    if(this.isGameOver) return;
+    var b=this.physics.add.image(x,y,'bullet').setScale(this.bulletScale).setTint(0xd946ef);
+    // hitbox bullet nemico: ingrandiamo notevolmente la hitbox per ridurre i passaggi attraverso il giocatore
+    var newW = Math.max(8, b.displayWidth * 2);
+    var newH = b.displayHeight * 4;
+    b.setSize(newW, newH, true);
+    this.physics.velocityFromRotation(ang, 260+this.level*8, b.body.velocity);
+    this.time.delayedCall(1500,()=>{ if(b.active) b.destroy(); });
+    this.physics.add.overlap(this.player,b,()=>{
+      if(!b.active||this.isGameOver) return;
+      b.body.enable=false; b.destroy();
+      var now=this.time.now;
+      if(now < this.playerIframesUntil) return;
+      this.playerIframesUntil = now + this.playerHitCooldown;
+      this.player.damageOnce();
+    });
+  },
+
+  // Genera il boss quando richiesto. Il numero di segmenti dipende da quante volte è già apparso.
+  spawnBoss:function(){
+    if(this.isGameOver) return;
+    // interrompe la musica del boss precedente se presente
+    if(this.bossMusic){ this.bossMusic.stop(); this.bossMusic = null; }
+    // riproduce musica del boss in loop
+    if(this.sound && this.sound.add){
+      this.bossMusic = this.sound.add('boss_music',{loop:true,volume:1});
+      this.bossMusic.play();
+    }
+    this.bossActive = true;
+    this.bossCount++;
+    // calcola il numero di segmenti: parte da 2 alla prima apparizione e ne aggiunge uno ad ogni nuova apparizione, max 6
+    var segments = Math.min(2 + (this.bossCount - 1), 6);
+    // istanzia il boss al centro in alto fuori dallo schermo
+    var boss = new Boss(this, W/2, -80);
+    boss.setStats(segments, this.bossCount);
+    this.bossGroup.add(boss);
+    this.boss = boss;
+    // crea la barra della vita del boss
+    this.createBossBar(segments);
+  },
+
+  // Crea o aggiorna la barra della vita del boss con il numero di segmenti specificato
+  createBossBar:function(segments){
+    // pulisce la barra esistente
+    this.bossBarGroup.clear(true, true);
+    var barWidth = 20;
+    var barHeight = 6;
+    var spacing = 4;
+    var totalWidth = segments * barWidth + (segments - 1) * spacing;
+    var startX = (W - totalWidth) / 2 + barWidth / 2;
+    for(var i=0;i<segments;i++){
+      var rect = this.add.rectangle(startX + i*(barWidth+spacing), 6, barWidth, barHeight, 0xfca311).setOrigin(0.5,0);
+      this.bossBarGroup.add(rect);
+    }
+  },
+
+  // Aggiorna la barra del boss rimuovendo i segmenti esauriti
+  updateBossBar:function(segmentsRemaining){
+    var children = this.bossBarGroup.getChildren();
+    for(var i=0;i<children.length;i++){
+      children[i].setVisible(i < segmentsRemaining);
+    }
+  },
+
+  // Elimina il boss quando la sua vita arriva a zero
+  killBoss:function(){
+    if(!this.bossActive) return;
+    this.bossActive = false;
+    // stop musica boss
+    if(this.bossMusic){ this.bossMusic.stop(); this.bossMusic = null; }
+    // suono di fine del boss: riproduce il suono specifico quando tutte le tacche sono esaurite
+    if(this.sound && this.sound.play){ this.sound.play('boss_finish',{volume:1}); }
+    if(this.boss){
+      // grande esplosione
+      this.spawnExplosion(this.boss.x, this.boss.y);
+      this.boss.destroy();
+      this.boss = null;
+    }
+    // rimuove la barra del boss
+    this.bossBarGroup.clear(true, true);
+    // premia il giocatore
+    this.addScore(100 * this.level);
+
+    // reimposta il timer per lo spawn dei minion dopo la scomparsa del boss
+    this.nextBossMinionSpawn = this.time.now + 2000;
+
+    // assicura che per questo livello non venga generato un nuovo boss fino alla prossima rampa di livello
+    this.bossSpawnedForLevel = true;
+  },
+
+  update:function(t){
+    if(this.paused||this.isGameOver) return;
+
+    // Se è il momento di generare il boss, lo facciamo ora
+    if(!this.bossActive && !this.bossSpawnedForLevel && this.level >= 6 && (this.level % 6 === 0)){
+      this.spawnBoss();
+      this.bossSpawnedForLevel = true;
+    }
+    // Aggiorna il comportamento del boss se presente
+    if(this.bossActive && this.boss){
+      this.boss.updateBoss(t);
+    }
+
+    var k=this.keys;
+    var vx=((k.A.isDown||k.LEFT.isDown)?-1:0)+((k.D.isDown||k.RIGHT.isDown)?1:0);
+    var vy=((k.W.isDown||k.UP.isDown)?-1:0)+((k.S.isDown||k.DOWN.isDown)?1:0);
+    this.player.setVelocity(vx*PLAYER.SPEED, vy*PLAYER.SPEED);
+
+    var fire=(k.SPACE.isDown||k.SHIFT.isDown||k.CTRL.isDown);
+    if(fire && (!this.lastFiredAt || t>this.lastFiredAt+PLAYER.FIRE_CD)){
+      this.lastFiredAt = t;
+      // il proiettile parte leggermente sopra la navicella come nella versione base
+      this.spawnBullet(this.player.x, this.player.y - 10);
+    }
+
+    var L=this.level, list=this.enemies.getChildren();
+    for(var i=0;i<list.length;i++){
+      var e=list[i]; if(!e.active) continue;
+
+      if(e.type==='CHASER'){
+        var a=Phaser.Math.Angle.Between(e.x,e.y,this.player.x,this.player.y);
+        var vxc=Math.cos(a)*e.speed, vyc=Math.sin(a)*e.speed;
+        var minVy=80*speedScale(L); if(vyc<minVy) vyc=minVy;
+        e.body.setVelocity(vxc,vyc);
+      } else if(e.type==='DRIFTER'){
+        e.t += 0.02; var drift=Math.sin(e.t)*e.amp; e.body.setVelocity(drift,e.speed);
+      } else if(e.type==='SWEEPER'){
+        var vxs = e.dir*e.speed;
+        if(e.x<20) e.dir=1; if(e.x>W-20) e.dir=-1;
+        e.body.setVelocity(vxs, e.vy);
+      } else if(e.type==='DIVER'){
+        var dx=e.lockX - e.x;
+        if(Math.abs(dx) > 4){ var vxd=(dx>0?1:-1)*e.speed; e.body.setVelocity(vxd, e.speed*0.6); }
+        else { e.body.setVelocity(0, e.speed*1.1); }
+      } else { // SHOOTER
+        var dxs=this.player.x-e.x, dys=this.player.y-e.y, d=hypot(dxs,dys);
+        if(d>260){ var a3=Math.atan2(dys,dxs); e.body.setVelocity(Math.cos(a3)*e.speed, Math.sin(a3)*e.speed); }
+        else if(d<200){ var a4=Math.atan2(-dys,-dxs); e.body.setVelocity(Math.cos(a4)*e.speed, Math.sin(a4)*e.speed); }
+        else { e.body.setVelocity(0,120*speedScale(L)); }
+        if(t>e.lastShot+Math.max(700,e.fireCd-this.level*18)){ e.lastShot=t; this.enemyShoot(e.x,e.y,Math.atan2(dys,dxs)); }
+      }
+
+      if(e.y > H+40){ e.destroy(); }
+    }
+
+    if(t>this.nextSpawn){
+      this.nextSpawn=t+this.spawnDelay;
+      var batch=Math.min(1+Math.floor(this.level/5),4);
+      var active=this.enemies.countActive(true);
+      var room = capEnemies(this.level) - active;
+      var toSpawn = Math.max(0, Math.min(batch, room));
+      while(toSpawn-- > 0) this.spawnEnemy();
+    }
+  },
+
+  gameOver:function(){
+    if(this.isGameOver) return;
+    this.isGameOver = true;
+    this.player.setVelocity(0,0);
+    if(this.player.body) this.player.body.enable=false;
+    this.physics.world.isPaused = true;
+    this.time.paused = true;
+    if(this.pauseText){ this.pauseText.destroy(); this.pauseText=null; }
+    this.add.text(W/2,H/2,'GAME OVER\nScore: '+this.score,{fontSize:'36px',align:'center'}).setOrigin(.5);
+    this.add.text(W/2,H/2+80,'R per ricominciare',{fontSize:'16px'}).setOrigin(.5);
+  }
+});
+
+// avvio 
+new Phaser.Game({
+  type:Phaser.AUTO, width:W, height:H, parent:'game',
+  backgroundColor:'#0b0e14',
+  physics:{ default:'arcade', arcade:{ gravity:{y:0}, debug:false } },
+  scene:[Boot,Main]
+});
+</script>
+</body>
+</html>
