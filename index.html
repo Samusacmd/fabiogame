@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Phaser 3 – Preset + Asset personalizzati</title>
+  <title>Phaser 3 – Gioco Responsive</title>
   <style>
     html, body {
       height: 100%;
@@ -28,8 +28,13 @@
       border-radius: 10px;
       font-size: 14px;
       backdrop-filter: blur(6px);
+      z-index: 10;
     }
     .touch-ui {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 20;
       padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     }
   </style>
@@ -39,20 +44,22 @@
 <div id="game"></div>
 
 <!-- UI touch -->
-<div class="touch-ui" style="position:fixed; inset:0; pointer-events:none;">
+<div class="touch-ui">
   <div id="joy" style="position:absolute; left:24px; bottom:24px; width:140px; height:140px; pointer-events:auto; touch-action:none;">
-    <div id="joy-base" style="position:absolute; left:0; top:0; width:140px; height:140px; border-radius:70px; background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.2);"></div>
+    <div style="position:absolute; left:0; top:0; width:140px; height:140px; border-radius:70px; background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.2);"></div>
     <div id="joy-knob" style="position:absolute; left:55px; top:55px; width:30px; height:30px; border-radius:15px; background:rgba(255,255,255,0.35); border:2px solid rgba(255,255,255,0.6);"></div>
   </div>
   <div id="fire" style="position:absolute; right:24px; bottom:40px; width:96px; height:96px; border-radius:48px; pointer-events:auto; touch-action:none; background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.25); display:flex; align-items:center; justify-content:center;">
     <span style="font: 600 16px system-ui; color:#eaeaea; user-select:none;">SPARA</span>
   </div>
-  <label id="autofire" style="position:absolute; right:24px; bottom:144px; display:flex; gap:8px; align-items:center; pointer-events:auto; user-select:none;">
+  <label style="position:absolute; right:24px; bottom:144px; display:flex; gap:8px; align-items:center; pointer-events:auto; user-select:none;">
     <input type="checkbox" id="autofireChk">
     <span style="font: 600 14px system-ui; color:#eaeaea;">Auto-fire</span>
   </label>
   <button id="pauseBtn" style="position:absolute; right:18px; top:12px; width:44px; height:44px; border-radius:22px; pointer-events:auto; touch-action:none; background:rgba(255,255,255,0.12); border:2px solid rgba(255,255,255,0.25); color:#eaeaea; font: 700 16px system-ui;">⏸</button>
 </div>
+
+<div class="panel"><strong>Comandi:</strong> WASD/frecce, Spazio spara, P pausa, R restart.</div>
 
 <script>
 /* joystick + fire button handling */
@@ -63,7 +70,7 @@ var TOUCH={moveX:0,moveY:0,fire:false,auto:false};
   var fire=document.getElementById('fire');
   var pauseBtn=document.getElementById('pauseBtn');
   var chk=document.getElementById('autofireChk');
-  chk.addEventListener('change',function(){TOUCH.auto=!!this.checked;});
+  chk.addEventListener('change',()=>TOUCH.auto=chk.checked);
   var activeId=null,center={x:70,y:70},radius=60;
   function setKnob(dx,dy){knob.style.left=(center.x+dx-15)+'px';knob.style.top=(center.y+dy-15)+'px';}
   function updateFromPoint(cx,cy){
@@ -74,29 +81,24 @@ var TOUCH={moveX:0,moveY:0,fire:false,auto:false};
     TOUCH.moveX=(Math.abs(nx)<dz)?0:nx;TOUCH.moveY=(Math.abs(ny)<dz)?0:ny;
   }
   function resetStick(){setKnob(0,0);TOUCH.moveX=0;TOUCH.moveY=0;}
-  joy.addEventListener('pointerdown',function(e){joy.setPointerCapture(e.pointerId);activeId=e.pointerId;updateFromPoint(e.clientX,e.clientY);e.preventDefault();});
-  joy.addEventListener('pointermove',function(e){if(activeId!==e.pointerId)return;updateFromPoint(e.clientX,e.clientY);e.preventDefault();});
+  joy.addEventListener('pointerdown',e=>{joy.setPointerCapture(e.pointerId);activeId=e.pointerId;updateFromPoint(e.clientX,e.clientY);e.preventDefault();});
+  joy.addEventListener('pointermove',e=>{if(activeId!==e.pointerId)return;updateFromPoint(e.clientX,e.clientY);e.preventDefault();});
   function joyEnd(e){if(activeId!==e.pointerId)return;activeId=null;resetStick();e.preventDefault();}
   joy.addEventListener('pointerup',joyEnd);joy.addEventListener('pointercancel',joyEnd);joy.addEventListener('lostpointercapture',joyEnd);
-  var fireId=null;function fireOn(e){TOUCH.fire=true;fire.style.background='rgba(255,255,255,0.2)';e.preventDefault();}
-  function fireOff(e){TOUCH.fire=false;fire.style.background='rgba(255,255,255,0.1)';e.preventDefault();}
-  fire.addEventListener('pointerdown',function(e){fireId=e.pointerId;fireOn(e);});
-  fire.addEventListener('pointerup',function(e){if(fireId===e.pointerId)fireOff(e);});
-  fire.addEventListener('pointercancel',function(e){if(fireId===e.pointerId)fireOff(e);});
-  fire.addEventListener('lostpointercapture',function(e){if(fireId===e.pointerId)fireOff(e);});
-  pauseBtn.addEventListener('click',function(e){try{if(window.GPAUSE)window.GPAUSE();}catch(_){}e.preventDefault();});
-  ['touchstart','touchmove','touchend'].forEach(function(t){document.addEventListener(t,function(ev){ev.preventDefault();},{passive:false});});
+  fire.addEventListener('pointerdown',e=>{TOUCH.fire=true;fire.style.background='rgba(255,255,255,0.2)';e.preventDefault();});
+  fire.addEventListener('pointerup',()=>{TOUCH.fire=false;fire.style.background='rgba(255,255,255,0.1)';});
+  pauseBtn.addEventListener('click',()=>{try{if(window.GPAUSE)window.GPAUSE();}catch(_){}});
 })();
 </script>
 
-<div class="panel"><strong>Comandi:</strong> WASD/frecce, Spazio spara, P pausa, R restart.</div>
-
 <script>
 /* ============== CONFIGURAZIONE ============== */
-var W=900, H=600;  // risoluzione logica (resta fissa, Phaser farà il fit automatico)
-/* ... qui resta TUTTO il codice del gioco identico a quello che avevi ... */
+var W=900, H=600;
 
-/* === ALLA FINE sostituisci la creazione del gioco con questa === */
+/* Qui ci va tutto il tuo codice del gioco (Boot, Main, ship, enemy, ecc.)
+   Lascialo invariato. Io ti mostro solo la parte finale aggiornata. */
+
+/* === CREAZIONE GIOCO RESPONSIVE === */
 new Phaser.Game({
   type: Phaser.AUTO,
   width: W,
@@ -109,7 +111,7 @@ new Phaser.Game({
   },
   scene: [Boot, Main],
   scale: {
-    mode: Phaser.Scale.FIT,       // <-- adattamento automatico
+    mode: Phaser.Scale.FIT,       // Adatta allo schermo
     autoCenter: Phaser.Scale.CENTER_BOTH
   }
 });
