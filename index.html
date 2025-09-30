@@ -92,13 +92,70 @@ var TOUCH={moveX:0,moveY:0,fire:false,auto:false};
 </script>
 
 <script>
-/* ============== CONFIGURAZIONE ============== */
+/* ================= VARIABILI GLOBALI ================= */
 var W=900, H=600;
+var cursors, keyW, keyA, keyS, keyD, keySpace, keyP, keyR;
+var player, bullets, enemies, lastFired=0, score=0, scoreText, paused=false;
 
-/* Qui ci va tutto il tuo codice del gioco (Boot, Main, ship, enemy, ecc.)
-   Lascialo invariato. Io ti mostro solo la parte finale aggiornata. */
+/* ================= SCENE DI BOOT ================= */
+class Boot extends Phaser.Scene {
+  constructor(){super('Boot');}
+  preload(){
+    this.load.image('player','https://labs.phaser.io/assets/sprites/phaser-dude.png');
+    this.load.image('bullet','https://labs.phaser.io/assets/sprites/bullets/bullet7.png');
+    this.load.image('enemy','https://labs.phaser.io/assets/sprites/red.png');
+  }
+  create(){this.scene.start('Main');}
+}
 
-/* === CREAZIONE GIOCO RESPONSIVE === */
+/* ================= SCENE DI GIOCO ================= */
+class Main extends Phaser.Scene {
+  constructor(){super('Main');}
+  create(){
+    score=0;
+    player=this.physics.add.sprite(W/2,H/2,'player').setCollideWorldBounds(true);
+    bullets=this.physics.add.group({classType:Phaser.Physics.Arcade.Image,runChildUpdate:true});
+    enemies=this.physics.add.group();
+    this.time.addEvent({delay:1000,callback:this.spawnEnemy,callbackScope:this,loop:true});
+    scoreText=this.add.text(16,16,'Score: 0',{fontSize:'20px',fill:'#fff'}).setScrollFactor(0);
+    cursors=this.input.keyboard.createCursorKeys();
+    keyW=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+    keyA=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+    keyS=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+    keyD=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+    keySpace=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    keyP=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+    keyR=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+    this.physics.add.overlap(bullets,enemies,this.hitEnemy,null,this);
+    this.physics.add.overlap(player,enemies,this.playerHit,null,this);
+    window.GPAUSE=()=>{paused=!paused; this.physics.world.isPaused=paused;};
+  }
+  spawnEnemy(){
+    var x=Math.random()*W, y=Math.random()*H;
+    if(Math.abs(x-player.x)<100) x=(x+200)%W;
+    if(Math.abs(y-player.y)<100) y=(y+200)%H;
+    enemies.add(this.physics.add.sprite(x,y,'enemy'));
+  }
+  hitEnemy(bullet,enemy){bullet.destroy();enemy.destroy();score+=10;scoreText.setText('Score: '+score);}
+  playerHit(player,enemy){this.scene.restart();}
+  update(time){
+    if(Phaser.Input.Keyboard.JustDown(keyP)) window.GPAUSE();
+    if(Phaser.Input.Keyboard.JustDown(keyR)) this.scene.restart();
+    if(paused) return;
+    player.setVelocity(0);
+    var speed=200;
+    if(cursors.left.isDown||keyA.isDown||TOUCH.moveX<-0.1) player.setVelocityX(-speed);
+    if(cursors.right.isDown||keyD.isDown||TOUCH.moveX>0.1) player.setVelocityX(speed);
+    if(cursors.up.isDown||keyW.isDown||TOUCH.moveY<-0.1) player.setVelocityY(-speed);
+    if(cursors.down.isDown||keyS.isDown||TOUCH.moveY>0.1) player.setVelocityY(speed);
+    if((keySpace.isDown||TOUCH.fire||TOUCH.auto) && time>lastFired){
+      var bullet=bullets.create(player.x,player.y,'bullet');
+      if(bullet){bullet.setVelocityY(-400); lastFired=time+200;}
+    }
+  }
+}
+
+/* ================= AVVIO GIOCO ================= */
 new Phaser.Game({
   type: Phaser.AUTO,
   width: W,
@@ -111,7 +168,7 @@ new Phaser.Game({
   },
   scene: [Boot, Main],
   scale: {
-    mode: Phaser.Scale.FIT,       // Adatta allo schermo
+    mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH
   }
 });
