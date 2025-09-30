@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Phaser 3 – Gioco Responsive</title>
+  <title>Phaser 3 – Gioco Responsive con Asset</title>
   <style>
     html, body {
       height: 100%;
@@ -41,137 +41,251 @@
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.js"></script>
 </head>
 <body>
-<div id="game"></div>
+  <div id="game"></div>
 
-<!-- UI touch -->
-<div class="touch-ui">
-  <div id="joy" style="position:absolute; left:24px; bottom:24px; width:140px; height:140px; pointer-events:auto; touch-action:none;">
-    <div style="position:absolute; left:0; top:0; width:140px; height:140px; border-radius:70px; background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.2);"></div>
-    <div id="joy-knob" style="position:absolute; left:55px; top:55px; width:30px; height:30px; border-radius:15px; background:rgba(255,255,255,0.35); border:2px solid rgba(255,255,255,0.6);"></div>
+  <!-- UI touch -->
+  <div class="touch-ui">
+    <div id="joy" style="position:absolute; left:24px; bottom:24px; width:140px; height:140px; pointer-events:auto; touch-action:none;">
+      <div style="position:absolute; left:0; top:0; width:140px; height:140px; border-radius:70px; background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.2);"></div>
+      <div id="joy-knob" style="position:absolute; left:55px; top:55px; width:30px; height:30px; border-radius:15px; background:rgba(255,255,255,0.35); border:2px solid rgba(255,255,255,0.6);"></div>
+    </div>
+    <div id="fire" style="position:absolute; right:24px; bottom:40px; width:96px; height:96px; border-radius:48px; pointer-events:auto; touch-action:none; background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.25); display:flex; align-items:center; justify-content:center;">
+      <span style="font: 600 16px system-ui; color:#eaeaea; user-select:none;">SPARA</span>
+    </div>
+    <label style="position:absolute; right:24px; bottom:144px; display:flex; gap:8px; align-items:center; pointer-events:auto; user-select:none;">
+      <input type="checkbox" id="autofireChk">
+      <span style="font: 600 14px system-ui; color:#eaeaea;">Auto-fire</span>
+    </label>
+    <button id="pauseBtn" style="position:absolute; right:18px; top:12px; width:44px; height:44px; border-radius:22px; pointer-events:auto; touch-action:none; background:rgba(255,255,255,0.12); border:2px solid rgba(255,255,255,0.25); color:#eaeaea; font: 700 16px system-ui;">⏸</button>
   </div>
-  <div id="fire" style="position:absolute; right:24px; bottom:40px; width:96px; height:96px; border-radius:48px; pointer-events:auto; touch-action:none; background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.25); display:flex; align-items:center; justify-content:center;">
-    <span style="font: 600 16px system-ui; color:#eaeaea; user-select:none;">SPARA</span>
-  </div>
-  <label style="position:absolute; right:24px; bottom:144px; display:flex; gap:8px; align-items:center; pointer-events:auto; user-select:none;">
-    <input type="checkbox" id="autofireChk">
-    <span style="font: 600 14px system-ui; color:#eaeaea;">Auto-fire</span>
-  </label>
-  <button id="pauseBtn" style="position:absolute; right:18px; top:12px; width:44px; height:44px; border-radius:22px; pointer-events:auto; touch-action:none; background:rgba(255,255,255,0.12); border:2px solid rgba(255,255,255,0.25); color:#eaeaea; font: 700 16px system-ui;">⏸</button>
-</div>
 
-<div class="panel"><strong>Comandi:</strong> WASD/frecce, Spazio spara, P pausa, R restart.</div>
+  <div class="panel"><strong>Comandi:</strong> WASD/frecce, Spazio spara, P pausa, R restart.</div>
 
-<script>
-/* joystick + fire button handling */
-var TOUCH={moveX:0,moveY:0,fire:false,auto:false};
-(function(){
-  var joy=document.getElementById('joy');
-  var knob=document.getElementById('joy-knob');
-  var fire=document.getElementById('fire');
-  var pauseBtn=document.getElementById('pauseBtn');
-  var chk=document.getElementById('autofireChk');
-  chk.addEventListener('change',()=>TOUCH.auto=chk.checked);
-  var activeId=null,center={x:70,y:70},radius=60;
-  function setKnob(dx,dy){knob.style.left=(center.x+dx-15)+'px';knob.style.top=(center.y+dy-15)+'px';}
-  function updateFromPoint(cx,cy){
-    var r=joy.getBoundingClientRect(),x=cx-r.left,y=cy-r.top,dx=x-center.x,dy=y-center.y,mag=Math.hypot(dx,dy);
-    if(mag>radius){dx=dx*radius/mag;dy=dy*radius/mag;}
-    setKnob(dx,dy);
-    var nx=dx/radius,ny=dy/radius,dz=.15;
-    TOUCH.moveX=(Math.abs(nx)<dz)?0:nx;TOUCH.moveY=(Math.abs(ny)<dz)?0:ny;
-  }
-  function resetStick(){setKnob(0,0);TOUCH.moveX=0;TOUCH.moveY=0;}
-  joy.addEventListener('pointerdown',e=>{joy.setPointerCapture(e.pointerId);activeId=e.pointerId;updateFromPoint(e.clientX,e.clientY);e.preventDefault();});
-  joy.addEventListener('pointermove',e=>{if(activeId!==e.pointerId)return;updateFromPoint(e.clientX,e.clientY);e.preventDefault();});
-  function joyEnd(e){if(activeId!==e.pointerId)return;activeId=null;resetStick();e.preventDefault();}
-  joy.addEventListener('pointerup',joyEnd);joy.addEventListener('pointercancel',joyEnd);joy.addEventListener('lostpointercapture',joyEnd);
-  fire.addEventListener('pointerdown',e=>{TOUCH.fire=true;fire.style.background='rgba(255,255,255,0.2)';e.preventDefault();});
-  fire.addEventListener('pointerup',()=>{TOUCH.fire=false;fire.style.background='rgba(255,255,255,0.1)';});
-  pauseBtn.addEventListener('click',()=>{try{if(window.GPAUSE)window.GPAUSE();}catch(_){}});
-})();
-</script>
+  <script>
+  var TOUCH = { moveX:0, moveY:0, fire:false, auto:false };
+  (function(){
+    var joy = document.getElementById('joy');
+    var knob = document.getElementById('joy-knob');
+    var fire = document.getElementById('fire');
+    var pauseBtn = document.getElementById('pauseBtn');
+    var chk = document.getElementById('autofireChk');
+    chk.addEventListener('change', ()=>TOUCH.auto = chk.checked);
+    var activeId = null, center = {x:70, y:70}, radius = 60;
+    function setKnob(dx,dy){ knob.style.left = (center.x + dx - 15) + 'px'; knob.style.top = (center.y + dy - 15) + 'px'; }
+    function updateFromPoint(cx,cy){
+      var r = joy.getBoundingClientRect(), x = cx - r.left, y = cy - r.top, dx = x - center.x, dy = y - center.y, mag = Math.hypot(dx,dy);
+      if (mag > radius) {
+        dx = dx * radius / mag;
+        dy = dy * radius / mag;
+      }
+      setKnob(dx,dy);
+      var nx = dx / radius, ny = dy / radius, dz = .15;
+      TOUCH.moveX = (Math.abs(nx) < dz) ? 0 : nx;
+      TOUCH.moveY = (Math.abs(ny) < dz) ? 0 : ny;
+    }
+    function resetStick(){ setKnob(0,0); TOUCH.moveX = 0; TOUCH.moveY = 0; }
+    joy.addEventListener('pointerdown', e => { joy.setPointerCapture(e.pointerId); activeId = e.pointerId; updateFromPoint(e.clientX, e.clientY); e.preventDefault(); });
+    joy.addEventListener('pointermove', e => { if (activeId !== e.pointerId) return; updateFromPoint(e.clientX, e.clientY); e.preventDefault(); });
+    function joyEnd(e){ if (activeId !== e.pointerId) return; activeId = null; resetStick(); e.preventDefault(); }
+    joy.addEventListener('pointerup', joyEnd);
+    joy.addEventListener('pointercancel', joyEnd);
+    joy.addEventListener('lostpointercapture', joyEnd);
+    fire.addEventListener('pointerdown', e => { TOUCH.fire = true; fire.style.background = 'rgba(255,255,255,0.2)'; e.preventDefault(); });
+    fire.addEventListener('pointerup', e => { TOUCH.fire = false; fire.style.background = 'rgba(255,255,255,0.1)'; e.preventDefault(); });
+    pauseBtn.addEventListener('click', e => { try { if (window.GPAUSE) window.GPAUSE(); } catch (_) {} e.preventDefault(); });
+    ['touchstart','touchmove','touchend'].forEach(t => document.addEventListener(t, ev => { ev.preventDefault(); }, { passive:false }));
+  })();
+  </script>
 
-<script>
-/* ================= VARIABILI GLOBALI ================= */
-var W=900, H=600;
-var cursors, keyW, keyA, keyS, keyD, keySpace, keyP, keyR;
-var player, bullets, enemies, lastFired=0, score=0, scoreText, paused=false;
+  <script>
+  // CONFIGURAZIONE
+  var W = 900, H = 600;
 
-/* ================= SCENE DI BOOT ================= */
-class Boot extends Phaser.Scene {
-  constructor(){super('Boot');}
-  preload(){
-    this.load.image('player','https://labs.phaser.io/assets/sprites/phaser-dude.png');
-    this.load.image('bullet','https://labs.phaser.io/assets/sprites/bullets/bullet7.png');
-    this.load.image('enemy','https://labs.phaser.io/assets/sprites/red.png');
-  }
-  create(){this.scene.start('Main');}
-}
+  // Scene di Boot con caricamento asset
+  class Boot extends Phaser.Scene {
+    constructor(){ super('Boot'); }
+    preload(){
+      // Carica immagini
+      this.load.image('player', 'assets/fornaseiro.png');
+      this.load.image('chaser', 'assets/chaser.png');
+      this.load.image('drifter', 'assets/drifter.png');
+      this.load.image('sweeper', 'assets/sweeper.png');
+      this.load.image('diver', 'assets/diver.png');
+      this.load.image('shooter', 'assets/shooter.png');
+      this.load.image('heart', 'assets/heart.png');
+      this.load.image('boss', 'assets/boss.png');
+      this.load.image('bg', 'assets/background.png');
+      // Se hai spritesheet per le esplosioni
+      this.load.spritesheet('explosion', 'assets/explosionSheet.png', { frameWidth: 64, frameHeight: 64 });
 
-/* ================= SCENE DI GIOCO ================= */
-class Main extends Phaser.Scene {
-  constructor(){super('Main');}
-  create(){
-    score=0;
-    player=this.physics.add.sprite(W/2,H/2,'player').setCollideWorldBounds(true);
-    bullets=this.physics.add.group({classType:Phaser.Physics.Arcade.Image,runChildUpdate:true});
-    enemies=this.physics.add.group();
-    this.time.addEvent({delay:1000,callback:this.spawnEnemy,callbackScope:this,loop:true});
-    scoreText=this.add.text(16,16,'Score: 0',{fontSize:'20px',fill:'#fff'}).setScrollFactor(0);
-    cursors=this.input.keyboard.createCursorKeys();
-    keyW=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
-    keyA=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
-    keyS=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
-    keyD=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
-    keySpace=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    keyP=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
-    keyR=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
-    this.physics.add.overlap(bullets,enemies,this.hitEnemy,null,this);
-    this.physics.add.overlap(player,enemies,this.playerHit,null,this);
-    window.GPAUSE=()=>{paused=!paused; this.physics.world.isPaused=paused;};
-  }
-  spawnEnemy(){
-    var x=Math.random()*W, y=Math.random()*H;
-    if(Math.abs(x-player.x)<100) x=(x+200)%W;
-    if(Math.abs(y-player.y)<100) y=(y+200)%H;
-    enemies.add(this.physics.add.sprite(x,y,'enemy'));
-  }
-  hitEnemy(bullet,enemy){bullet.destroy();enemy.destroy();score+=10;scoreText.setText('Score: '+score);}
-  playerHit(player,enemy){this.scene.restart();}
-  update(time){
-    if(Phaser.Input.Keyboard.JustDown(keyP)) window.GPAUSE();
-    if(Phaser.Input.Keyboard.JustDown(keyR)) this.scene.restart();
-    if(paused) return;
-    player.setVelocity(0);
-    var speed=200;
-    if(cursors.left.isDown||keyA.isDown||TOUCH.moveX<-0.1) player.setVelocityX(-speed);
-    if(cursors.right.isDown||keyD.isDown||TOUCH.moveX>0.1) player.setVelocityX(speed);
-    if(cursors.up.isDown||keyW.isDown||TOUCH.moveY<-0.1) player.setVelocityY(-speed);
-    if(cursors.down.isDown||keyS.isDown||TOUCH.moveY>0.1) player.setVelocityY(speed);
-    if((keySpace.isDown||TOUCH.fire||TOUCH.auto) && time>lastFired){
-      var bullet=bullets.create(player.x,player.y,'bullet');
-      if(bullet){bullet.setVelocityY(-400); lastFired=time+200;}
+      // Carica suoni
+      this.load.audio('hit', 'sound/hit.mp3');
+      this.load.audio('shoot', 'sound/shoot.mp3');
+      this.load.audio('bg_music', 'sound/background.mp3');
+      this.load.audio('boss_music', 'sound/boss.mp3');
+      this.load.audio('boss_hit', 'sound/boss_hit.mp3');
+      this.load.audio('boss_explode', 'sound/boss_explode.mp3');
+      this.load.audio('boss_segment_loss', 'sound/boss_segment.mp3');
+      this.load.audio('boss_finish', 'sound/boss_finish.mp3');
+    }
+    create(){
+      // Se manca qualche texture, fallback generico (opzionale)
+      this.scene.start('Main');
     }
   }
-}
 
-/* ================= AVVIO GIOCO ================= */
-new Phaser.Game({
-  type: Phaser.AUTO,
-  width: W,
-  height: H,
-  parent: 'game',
-  backgroundColor: '#0b0e14',
-  physics: {
-    default: 'arcade',
-    arcade: { gravity: { y: 0 }, debug: false }
-  },
-  scene: [Boot, Main],
-  scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH
+  class Main extends Phaser.Scene {
+    constructor(){ super('Main'); }
+    init(){
+      this.level = 1;
+      this.score = 0;
+      this.elapsed = 0;
+      this.spawnDelay = 1400;
+      this.bossActive = false;
+      this.bossCount = 0;
+      this.bossSpawnedForLevel = false;
+      this.nextBossMinionSpawn = 0;
+    }
+    create(){
+      // sfondo
+      this.add.image(W/2, H/2, 'bg').setDisplaySize(W, H).setDepth(-2);
+      this.add.rectangle(W/2, H/2, W, H, 0x000000, 0.35).setDepth(-1);
+
+      // musica di sfondo
+      this.bgMusic = this.sound.add('bg_music', { loop: true, volume: 0.25 });
+      this.bgMusic.play();
+
+      // gruppi
+      this.bullets = this.physics.add.group();
+      this.enemies = this.physics.add.group();
+      this.pickups = this.physics.add.group();
+      this.bossGroup = this.physics.add.group();
+      this.bossBarGroup = this.add.group();
+
+      // input tastiera
+      this.keys = this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,P,R');
+
+      // player
+      this.player = this.physics.add.sprite(W/2, H-80, 'player');
+      this.player.setCollideWorldBounds(true);
+      this.player.hp = 3;
+      this.lastFired = 0;
+
+      // HUD punteggio / livello
+      this.scoreTxt = this.add.text(12, H-26, 'Score: 0', { fontSize:'16px', color:'#eaeaea' });
+      this.levelTxt = this.add.text(W-12, H-26, 'Lv 1', { fontSize:'16px', color:'#eaeaea' }).setOrigin(1,0);
+
+      // cuori
+      this.hearts = [];
+      for (let i = 0; i < 5; i++){
+        let h = this.add.image(W-20 - i*22, 18, 'heart');
+        this.hearts.push(h);
+      }
+      this.events.on('hp', h => {
+        for (let i = 0; i < this.hearts.length; i++){
+          this.hearts[i].setAlpha(i < h ? 1 : 0.25);
+        }
+      });
+
+      // collisioni
+      this.physics.add.overlap(this.bullets, this.enemies, (b, e) => {
+        if (!b.active || !e.active) return;
+        b.destroy();
+        e.destroy();
+        this.sound.play('hit');
+        this.score += 10;
+        this.scoreTxt.setText('Score: ' + this.score);
+      });
+
+      this.physics.add.overlap(this.player, this.enemies, () => {
+        this.scene.restart();
+      });
+
+      // spawn nemici continuo
+      this.nextSpawn = 0;
+
+      this.time.addEvent({
+        delay: 1000,
+        loop: true,
+        callback: () => {
+          this.elapsed++;
+          if (this.elapsed % 10 === 0) {
+            this.spawnDelay = Math.max(350, Math.floor(1400 * Math.pow(0.96, this.level/2)));
+          }
+        }
+      });
+
+      window.GPAUSE = () => {
+        this.paused = !this.paused;
+        this.physics.world.isPaused = this.paused;
+        if (this.paused) {
+          this.pauseText = this.add.text(W/2, H/2, 'PAUSA', { fontSize:'32px', color:'#fff' }).setOrigin(0.5);
+        } else {
+          if (this.pauseText) this.pauseText.destroy();
+        }
+      };
+    }
+    update(time){
+      if (Phaser.Input.Keyboard.JustDown(this.keys.P)) {
+        window.GPAUSE();
+      }
+      if (Phaser.Input.Keyboard.JustDown(this.keys.R)) {
+        this.scene.restart();
+      }
+      if (this.paused) return;
+
+      // movimento player
+      let vx = 0, vy = 0;
+      if (this.keys.A.isDown || this.keys.LEFT.isDown || TOUCH.moveX < -0.1) vx = -1;
+      if (this.keys.D.isDown || this.keys.RIGHT.isDown || TOUCH.moveX > 0.1) vx = 1;
+      if (this.keys.W.isDown || this.keys.UP.isDown || TOUCH.moveY < -0.1) vy = -1;
+      if (this.keys.S.isDown || this.keys.DOWN.isDown || TOUCH.moveY > 0.1) vy = 1;
+      this.player.setVelocity(vx * 260, vy * 260);
+
+      // sparo
+      if ((this.keys.SPACE.isDown || TOUCH.fire || TOUCH.auto) && time > this.lastFired + 200) {
+        this.lastFired = time;
+        let b = this.bullets.create(this.player.x, this.player.y - 10, 'bullet');
+        if (b) {
+          b.setVelocity(0, -640);
+          this.sound.play('shoot');
+        }
+      }
+
+      // spawn nemici
+      if (time > this.nextSpawn) {
+        this.nextSpawn = time + this.spawnDelay;
+        this.spawnEnemy();
+      }
+    }
+    spawnEnemy(){
+      let x = Phaser.Math.Between(20, W-20);
+      let y = Phaser.Math.Between(20, H/2);
+      let types = ['chaser','drifter','sweeper','diver','shooter'];
+      let key = Phaser.Utils.Array.GetRandom(types);
+      let e = this.enemies.create(x, y, key);
+      e.type = key;
+      // puoi aggiungere velocità, comportamento a seconda del tipo
+    }
   }
-});
-</script>
+
+  // creazione del gioco
+  new Phaser.Game({
+    type: Phaser.AUTO,
+    width: W,
+    height: H,
+    parent: 'game',
+    backgroundColor: '#0b0e14',
+    physics: {
+      default: 'arcade',
+      arcade: { gravity: { y: 0 }, debug: false }
+    },
+    scene: [Boot, Main],
+    scale: {
+      mode: Phaser.Scale.FIT,
+      autoCenter: Phaser.Scale.CENTER_BOTH
+    }
+  });
+  </script>
 </body>
 </html>
