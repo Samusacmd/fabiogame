@@ -24,8 +24,8 @@ function circleTex(s,key,r,fill,stroke){var g=s.add.graphics();g.fillStyle(fill|
 function rectTex(s,key,w,h,fill,stroke){var g=s.add.graphics();g.fillStyle(fill||0xffffff,1);g.fillRoundedRect(0,0,w,h,Math.min(w,h)*0.2);if(stroke){g.lineStyle(3,stroke,1);g.strokeRoundedRect(0,0,w,h,Math.min(w,h)*0.2);}g.generateTexture(key,w,h);g.destroy();}
 function hypot(dx,dy){return Math.sqrt(dx*dx+dy*dy);}
 var INPUT={moveX:0,moveY:0,fire:false};
-var PLAYER={SPEED:260,FIRE_CD:200,MAX_HP:8,START_HP:5};
-var BULLET={SPEED:640,LIFE:1200};
+var PLAYER={SPEED:560,FIRE_CD:200,MAX_HP:8,START_HP:5};
+var BULLET={SPEED:940,LIFE:1200};
 var DIFF={BASE:1400,MIN:350,STEP_S:10,FACTOR:0.9};
 function speedScale(L){return Math.min(1.0,0.45+0.05*L);}
 function baseSpeed(t,L){if(t==='CHASER')return 90+L*5;if(t==='DRIFTER')return 55+L*3;if(t==='SWEEPER')return 80+L*4;if(t==='DIVER')return 140+L*6;if(t==='SHOOTER')return 55+L*3;return 80+L*4;}
@@ -42,7 +42,6 @@ preload:function(){
   this.load.audio('shoot','sound/shoot.mp3');
   this.load.audio('bg_music','sound/background.mp3');
   this.load.audio('boss_music','sound/boss.mp3');
-  this.load.audio('boss_hit','sound/boss_hit.mp3');
   this.load.audio('boss_explode','sound/boss_explode.mp3');
   this.load.audio('boss_segment_loss','sound/boss_segment.mp3');
   this.load.audio('boss_finish','sound/boss_finish.mp3');
@@ -157,7 +156,7 @@ ramp:function(){this.level++;this.levelTxt.setText('Lv '+this.level);var steps=M
 flash:function(o){this.tweens.add({targets:o,duration:60,repeat:2,alpha:.2,yoyo:true});},
 spawnExplosion:function(x,y){if(this.textures.exists('explosion')){var s=this.add.sprite(x,y,'explosion').setScale(ASSETS.scales.explosion||1);s.play('boom');s.on('animationcomplete',()=>s.destroy());}else{var g=this.add.circle(x,y,12,0xfff3c4).setAlpha(0.9);this.tweens.add({targets:g,alpha:0,scale:2,duration:200,onComplete:()=>g.destroy()});}},
 dropHeart:function(x,y){var p=this.physics.add.image(x,y,'heart').setScale((ASSETS.enabled&&ASSETS.heart)?(ASSETS.scales.heart||1):1);p.setSize(p.displayWidth,p.displayHeight,true);p.setVelocity(Phaser.Math.Between(-40,40),Phaser.Math.Between(-40,40));p.setDrag(120,120);this.pickups.add(p);this.time.delayedCall(6000,()=>{if(p.active)p.destroy();});},
-spawnBullet:function(x,y){if(this.isGameOver)return; if(this.sound&&this.sound.play){this.sound.play('shoot',{volume:0.5});}var b=this.physics.add.image(x,y,this.bulletKey).setScale(this.bulletScale);var newW=Math.max(8,b.displayWidth*2),newH=b.displayHeight*4;b.setSize(newW,newH,true);this.bullets.add(b);b.setVelocity(0,-BULLET.SPEED);b.setAngle(-90);b.setDepth(2);this.time.delayedCall(BULLET.LIFE,()=>{if(b&&b.active)b.destroy();});},
+spawnBullet:function(x,y){if(this.isGameOver)return; if(this.sound&&this.sound.play){this.sound.play('shoot',{volume:0.5});}var b=this.physics.add.image(x,y,this.bulletKey).setScale(this.bulletScale);var newW=Math.max(8,b.displayWidth*2),newH=b.displayHeight*4;b.setSize(newW,newH,true);this.bullets.add(b);b.setVelocity(0,-BULLET.SPEED);b.setAngle(+0);b.setDepth(2);this.time.delayedCall(BULLET.LIFE,()=>{if(b&&b.active)b.destroy();});},
 spawnEnemy:function(){
   if(this.isGameOver)return;
   if(this.bossActive){var nowTime=this.time.now,L=this.level;if(L<36)return;if(nowTime<this.nextBossMinionSpawn)return;var maxMinions=(L<60)?2:5;var activeMinions=this.enemies.countActive(true);if(activeMinions>=maxMinions)return;this.nextBossMinionSpawn=nowTime+10000;}
