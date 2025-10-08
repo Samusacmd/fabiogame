@@ -38,17 +38,14 @@
   .scoreboard ul{list-style:none;padding:0;margin:8px 0;max-height:220px;overflow:auto;}
   .scoreboard li{padding:6px 8px;border-bottom:1px solid #223;}
   /* pause button top-right */
-  #pauseBtn{
-    position: absolute; top:70px; right:12px; z-index:900; border-radius:8px; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.06);
-    color:#fff; padding:8px 10px; cursor:pointer; font-weight:700;
-  }
+  #pauseBtn{position: absolute; bottom:12px; left:120px; z-index:900; border-radius:8px; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.06); color:#fff; padding:8px 10px; cursor:pointer; font-weight:700;}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.js"></script>
 </head>
 <body>
 <div id="game"></div>
 
-<!-- PULSANTE PAUSA IN ALTO A DESTRA -->
+<!-- PULSANTE PAUSA IN BASSO A SINISTRA (vicino allo score) -->
 <button id="pauseBtn" title="Pausa (P)">⏸</button>
 
 <!-- MENU DI PAUSA -->
@@ -149,23 +146,21 @@ function hypot(dx,dy){return Math.sqrt(dx*dx+dy*dy);}
 var INPUT={moveX:0,moveY:0,fire:false};
 var PLAYER={SPEED:560,FIRE_CD:200,MAX_HP:8,START_HP:5};
 
-// BULLET/WEAPON base settings (modificabili facilmente)
-// player bullet base speed and caps
 const BULLET_BASE_SPEED = 900;
-const BULLET_INC_AFTER_LEVEL = 10;      // dopo questo livello inizia l'incremento
-const BULLET_INC_PER_LEVEL = 30;        // quanto aumenta la velocità per livello dopo il livello 10
-const BULLET_MAX_SPEED = 1800;         // limite massimo
+const BULLET_INC_AFTER_LEVEL = 10;      
+const BULLET_INC_PER_LEVEL = 20;        
+const BULLET_MAX_SPEED = 1800;        
 
-// enemy bullet speed (opzionale, scalabile)
+
 const ENEMY_BULLET_BASE = 260;
 const ENEMY_BULLET_INC_AFTER = 10;
 const ENEMY_BULLET_INC_PER_LEVEL = 6;
 const ENEMY_BULLET_MAX = 700;
 
-// player fire cooldown progression (minimo)
-const PLAYER_FIRECD_BASE = PLAYER.FIRE_CD; // 200
+
+const PLAYER_FIRECD_BASE = PLAYER.FIRE_CD; 
 const PLAYER_FIRECD_INC_AFTER = 10;
-const PLAYER_FIRECD_DEC_PER_LEVEL = 7;   // riduzione cd (più basso = spara più veloce)
+const PLAYER_FIRECD_DEC_PER_LEVEL = 7;
 const PLAYER_FIRECD_MIN = 70;
 
 var BULLET={SPEED:BULLET_BASE_SPEED,LIFE:1200};
@@ -178,7 +173,6 @@ function baseSpeed(t,L){if(t==='CHASER')return 90+L*5;if(t==='DRIFTER')return 55
 function capEnemies(L){return Math.min(6+Math.floor(L/2),18);}
 function heartChance(L){if(L<=4)return .06;if(L<=8)return .04;return .03;}
 
-/* ---------- Nuova funzione: aggiorna velocità/roaming armi quando cambia il livello ---------- */
 function updateWeaponStats(level, scene){
   if(level <= BULLET_INC_AFTER_LEVEL){
     BULLET.SPEED = BULLET_BASE_SPEED;
@@ -210,8 +204,6 @@ function updateWeaponStats(level, scene){
   }
 }
 
-/* ---------- resto del gioco (con piccole integrazioni audio/UI) ---------- */
-
 var Boot=new Phaser.Class({Extends:Phaser.Scene,initialize:function(){Phaser.Scene.call(this,{key:'boot'});},
 preload:function(){
   if(!ASSETS.enabled)return;
@@ -225,6 +217,7 @@ preload:function(){
   this.load.audio('boss_explode','sound/boss_explode.mp3');
   this.load.audio('boss_segment_loss','sound/boss_segment.mp3');
   this.load.audio('boss_finish','sound/boss_finish.mp3');
+  this.load.image('toast_face','assets/iosonoio.png');
   if(ASSETS.explosionSheet&&ASSETS.explosionSheet.trim()){
     this.load.spritesheet('explosion',ASSETS.explosionSheet,{frameWidth:ASSETS.explosionFrameW||64,frameHeight:ASSETS.explosionFrameH||64});
   }
@@ -275,13 +268,26 @@ updateBoss:function(t){if(this.alpha!==1)this.setAlpha(1);
   if(rem<before){this.segmentsCurrent=rem;if(rem>0){if(this.scene.sound&&this.scene.sound.play){this.scene.sound.play('boss_segment_loss',{volume:1 * sfxVolume});this.setAlpha(1);/*END_GUARD*/}}}
   (()=>{ var sc=this.scene; if(sc&&sc.time){ if(this.setTintFill){ this.setTintFill(0xff4444); sc.time.delayedCall(100,()=>{ if(this && this.clearTint) this.clearTint(); }); } } })();this.scene.updateBossBar(rem);if(this.hpRemaining<=0){this.scene.killBoss();}}});
 
+function getPlayerVolleyCount(level){
+  if(level >= 30) return 3;
+  if(level >= 20) return 2;
+  return 1;
+}
+function spawnPlayerVolley(scene, x, y){
+  const n = getPlayerVolleyCount(scene.level||1);
+  if(n === 1){ scene.spawnBullet(x, y); return; }
+  const spacing = 14;
+  for(let i=0;i<n;i++){
+    const off = (i - (n-1)/2) * spacing;
+    scene.spawnBullet(x + off, y);
+  }
+}
 var Main=new Phaser.Class({Extends:Phaser.Scene,initialize:function(){Phaser.Scene.call(this,{key:'main'});},
 init:function(){this.level=1;this.score=0;this.elapsed=0;this.spawnDelay=DIFF.BASE;this.bossActive=false;this.bossCount=0;this.bossSpawnedForLevel=false;this.nextBossMinionSpawn=0;},
 create:function(){
   this.bg=this.add.image(W/2,H/2,'bg').setDisplaySize(W,H).setDepth(-2);
   this.dim=this.add.rectangle(W/2,H/2,W,H,0x000000,0.35).setDepth(-1);
 
-  // bgMusic respects the saved musicVolume
   if(this.sound&&this.sound.add){
     this.bgMusic=this.sound.add('bg_music',{loop:true,volume: musicVolume});
     this.bgMusic.play();
@@ -299,19 +305,16 @@ create:function(){
 
   var k=this.input.keyboard.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,SHIFT,CTRL,P,R');this.keys=k;
 
-  // Replace original GPAUSE with UI-aware pause (keeps original behavior but shows menu)
-  window.GPAUSE=()=>{ if(this.isGameOver) return; this.togglePause(); };
-
   this.player=new Player(this,W/2,H-80);
   this.bulletKey='bullet';this.bulletScale=(ASSETS.enabled&&ASSETS.bullet)?(ASSETS.scales.bullet||1):1;
 
-  // aggiorna gli stats delle armi iniziali
-  updateWeaponStats(this.level, this);
+ updateWeaponStats(this.level, this);
+ if(this.level===20||this.level===30){ if(this.showToasty) this.showToasty(); }
 
-  this.playerHitCooldown=2000;this.playerIframesUntil=this.time.now;this.paused=false;this.pauseText=null;this.isGameOver=false;
+  this.playerHitCooldown=2000;this.playerIframesUntil=this.time.now;this.lastHitSfxAt=0;this.paused=false;this.pauseText=null;this.isGameOver=false;
 
   var self=this;
-  this.physics.add.overlap(this.bullets,this.enemies,function(b,e){if(!b.active||!e.active||self.isGameOver)return;b.body.enable=false;b.destroy();if(self.sound&&self.sound.play){self.sound.play('hit',{volume:1 * sfxVolume});}var ex=e.x,ey=e.y;e.hit();if(!e.active){self.addScore(10);if(Phaser.Math.FloatBetween(0,1)<heartChance(self.level))self.dropHeart(ex,ey);}});
+  this.physics.add.overlap(this.bullets,this.enemies,function(b,e){if(!b.active||!e.active||self.isGameOver)return;b.body.enable=false;b.destroy();if(self.sound&&self.sound.play){var __now=self.time.now; if(!self.lastHitSfxAt||__now-self.lastHitSfxAt>=2000){ self.lastHitSfxAt=__now; if(self.sound&&self.sound.play){ self.sound.play('hit',{volume:1 * sfxVolume}); } }}var ex=e.x,ey=e.y;e.hit();if(!e.active){self.addScore(10);if(Phaser.Math.FloatBetween(0,1)<heartChance(self.level))self.dropHeart(ex,ey);}});
   this.physics.add.overlap(this.player,this.enemies,function(){if(self.isGameOver)return;var now=self.time.now;if(now<self.playerIframesUntil)return;self.playerIframesUntil=now+self.playerHitCooldown;self.player.damageOnce();});
   this.physics.add.overlap(this.player,this.pickups,function(p,it){if(!it.active||self.isGameOver)return;it.destroy();if(self.player.hp<PLAYER.MAX_HP){self.player.hp++;self.events.emit('hp',self.player.hp);}self.addScore(25);});
   this.physics.add.overlap(this.bullets,this.bossGroup,function(b,boss){if(!b.active||!boss.active||self.isGameOver)return;b.body.enable=false;b.destroy();boss.takeHit();});
@@ -321,48 +324,89 @@ create:function(){
   this.levelTxt=this.add.text(W-12,H-26,'Lv 1',{fontSize:'16px',color:'#eaeaea'}).setOrigin(1,0);
   var i;this.hearts=[];for(i=0;i<PLAYER.MAX_HP;i++){this.hearts.push(this.add.image(W-20-i*22,18,'heart').setScale((ASSETS.enabled&&ASSETS.heart)?(ASSETS.scales.heart||1):1));}
   this.events.on('hp',(h)=>{for(i=0;i<this.hearts.length;i++){this.hearts[i].setAlpha(i<h?1:.25);}});
+  var self = this;
+  this.toastyImg = this.add.image(0,0,'toast_face').setVisible(false).setDepth(1002).setOrigin(0,0);
+  this.toastySfx = this.sound.add('boss_explode');
+  this.showToasty = function(){
+    try{
+      var W = self.scale.width, H = self.scale.height;
+      var targetHeight = Math.max(64, Math.floor(H * 0.18));
+      var texH = self.toastyImg.height || targetHeight;
+      var scale = targetHeight / texH;
+      self.toastyImg.setScale(scale);
+      var pad = Math.floor(12 * (W/800));
+      var h = self.toastyImg.displayHeight;
+      var y = H - pad - h;
+      var w = self.toastyImg.displayWidth;
+      self.toastyImg.setPosition(-w - 10, y).setVisible(true).setAlpha(1);
+
+      if(self.toastyTweenIn && self.toastyTweenIn.isPlaying()) self.toastyTweenIn.stop();
+      if(self.toastyTweenOut && self.toastyTweenOut.isPlaying()) self.toastyTweenOut.stop();
+
+      if(self.toastySfx){ self.toastySfx.setVolume(sfxVolume); self.toastySfx.play(); }
+
+      self.toastyTweenIn = self.tweens.add({
+        targets: self.toastyImg,
+        x: pad,
+        duration: 280,
+        ease: 'Sine.easeOut',
+        onComplete: function(){
+          self.time.delayedCall(2400, function(){
+            self.toastyTweenOut = self.tweens.add({
+              targets: self.toastyImg,
+              x: -w - 10,
+              duration: 280,
+              ease: 'Sine.easeIn',
+              onComplete: function(){ self.toastyImg.setVisible(false); }
+            });
+          });
+        }
+      });
+    }catch(e){ /* no-op */ }
+  };
+  this.scale.on('resize', function(gameSize){
+    if(self.toastyImg && self.toastyImg.visible){
+      var W = gameSize.width, H = gameSize.height;
+      var targetHeight = Math.max(64, Math.floor(H * 0.18));
+      var texH = self.toastyImg.height || targetHeight;
+      var scale = targetHeight / texH;
+      self.toastyImg.setScale(scale);
+      var pad = Math.floor(12 * (W/800));
+      var h2 = self.toastyImg.displayHeight;
+      self.toastyImg.y = H - pad - h2;
+    }
+  });
+
 
   this.nextSpawn=0;this.time.addEvent({delay:1000,loop:true,callback:()=>{if(this.paused||this.isGameOver)return;this.elapsed++;if(this.elapsed%DIFF.STEP_S===0)this.ramp();}});
 
-  // Pausa: mostra il menu DOM (in alto a destra o P)
   this.input.keyboard.on('keydown-P',()=>{ if(this.isGameOver) return; this.togglePause(); });
 
-  // R per riavviare (mantengo comportamento originale)
   this.input.keyboard.on('keydown-R',()=>{ if(this.sound&&this.sound.stopAll)this.sound.stopAll(); this.physics.world.isPaused=false; this.time.paused=false; try{INPUT.moveX=0;INPUT.moveY=0;INPUT.fire=false;}catch(_){ } this.scene.restart(); });
 
   this.events.emit('hp',this.player.hp);
   this.physics.world.setBounds(0,0,W,H);
 
-  // add a small on-screen "PAUSA" label? we use DOM pauseBtn instead (see bottom)
-  // end create
-  // attach helper to scene for toggling pause (used by window.GPAUSE and pauseBtn)
   this.togglePause = function(){
     this.paused = !this.paused;
     this.physics.world.isPaused = this.paused;
     // pause timers: Phaser will continue some timers; keep scene.paused flag used in update loops
     if(this.paused){
-      // show DOM pause menu
       document.getElementById('pauseMenu').style.display = 'block';
-      document.getElementById('pauseMenu').setAttribute('aria-hidden','false');
-      // pause music if playing
+      document.getElementById('pauseMenu').setAttribute('aria-hidden','false')
       if(this.bgMusic && this.bgMusic.isPlaying) this.bgMusic.pause();
-      // also pause bossMusic if active
       if(this.bossMusic && this.bossMusic.isPlaying) this.bossMusic.pause();
-      // freeze pointer input to avoid accidental shooting while paused
       this.pointerActiveStateBeforePause = this.pointerActive;
       this.pointerActive = false;
     } else {
       hidePauseMenu();
       if(this.bgMusic && this.bgMusic.isPaused) this.bgMusic.resume();
       if(this.bossMusic && this.bossMusic.isPaused) this.bossMusic.resume();
-      // restore pointer
       this.pointerActive = !!this.pointerActiveStateBeforePause;
     }
   }.bind(this);
 
-  // expose restart via DOM
   this.domRestart = function(){
-    // hide menus
     hidePauseMenu();
     hideScoreboard();
     if(this.bgMusic && this.bgMusic.isPlaying) this.bgMusic.stop();
@@ -383,8 +427,8 @@ this.scale.on('resize',(g)=>{
 },
 addScore:function(v){this.score+=v;this.scoreTxt.setText('Score: '+this.score);},
 ramp:function(){this.level++;this.levelTxt.setText('Lv '+this.level);var steps=Math.floor(this.level/2);this.spawnDelay=Math.max(DIFF.MIN,Math.floor(DIFF.BASE*Math.pow(0.96,steps)));this.bossSpawnedForLevel=false;
-// aggiorna qui le armi quando il livello sale
 updateWeaponStats(this.level, this);
+if(this.level===20||this.level===30){ if(this.showToasty) this.showToasty(); }
 },
 flash:function(o){this.tweens.add({targets:o,duration:60,repeat:2,alpha:.2,yoyo:true});},
 spawnExplosion:function(x,y){if(this.textures.exists('explosion')){var s=this.add.sprite(x,y,'explosion').setScale(ASSETS.scales.explosion||1);s.play('boom');s.on('animationcomplete',()=>s.destroy());}else{var g=this.add.circle(x,y,12,0xfff3c4).setAlpha(0.9);this.tweens.add({targets:g,alpha:0,scale:2,duration:200,onComplete:()=>g.destroy()});}},
@@ -409,7 +453,6 @@ enemyShoot:function(x,y,ang){
   if(this.isGameOver)return;
   var b=this.physics.add.image(x,y,'bullet').setScale(this.bulletScale).setTint(0xd946ef);
   var newW=Math.max(8,b.displayWidth*2),newH=b.displayHeight*4;b.setSize(newW,newH,true);
-  // usa ENEMY_BULLET_SPEED che viene aggiornato da updateWeaponStats
   this.physics.velocityFromRotation(ang, ENEMY_BULLET_SPEED + this.level * 1.0, b.body.velocity);
   this.time.delayedCall(1500,()=>{if(b.active)b.destroy();});
   this.physics.add.overlap(this.player,b,()=>{if(!b.active||this.isGameOver)return;b.body.enable=false;b.destroy();var now=this.time.now;if(now<this.playerIframesUntil)return;this.playerIframesUntil=now+this.playerHitCooldown;this.player.damageOnce();});
@@ -446,7 +489,7 @@ if(this.pointerActive){
 }
 this.player.setVelocity(mx*PLAYER.SPEED, my*PLAYER.SPEED);
 var fire = this.pointerActive;
-if(fire&&(!this.lastFiredAt||t>this.lastFiredAt+PLAYER.FIRE_CD)){this.lastFiredAt=t;this.spawnBullet(this.player.x,this.player.y-10);}
+if(fire&&(!this.lastFiredAt||t>this.lastFiredAt+PLAYER.FIRE_CD)){this.lastFiredAt=t;spawnPlayerVolley(this,this.player.x,this.player.y-10);}
 var L=this.level
 ,list=this.enemies.getChildren();
   for(var i=0;i<list.length;i++){
@@ -481,23 +524,11 @@ gameOver:function(){
   this.add.text(W/2,H/2,'GAME OVER\nScore: '+this.score,{fontSize:'36px',align:'center'}).setOrigin(.5);
   this.add.text(W/2,H/2+80,'R per ricominciare',{fontSize:'16px'}).setOrigin(.5);
 
-  // save score and show scoreboard DOM
   try{ saveScore(this.score); }catch(e){ console.warn('saveScore fail',e); }
   showScoreboardUI();
 }});
 
 var game=new Phaser.Game({type:Phaser.AUTO,parent:'game',backgroundColor:'#0b0e14',scale:{mode:Phaser.Scale.RESIZE,autoCenter:Phaser.Scale.CENTER_BOTH,width:W,height:H},physics:{default:'arcade',arcade:{gravity:{y:0},debug:false}},scene:[Boot,Main]});
-
-/* ---------- Fine parte di gioco originale (con le integrazioni) ---------- */
-
-/* --------------------
-  DOM handlers for pause UI, volume sliders and scoreboard buttons
-  - pauseBtn toggles pause (same as P)
-  - sliders update musicVolume / sfxVolume and save to localStorage
-  - resumeBtn hides menu and resumes game
-  - restartBtn restarts the scene
-  - restartAfterScore restarts from scoreboard
-  -------------------- */
 
 const pauseBtn = document.getElementById('pauseBtn');
 const pauseMenu = document.getElementById('pauseMenu');
@@ -516,25 +547,23 @@ pauseBtn.addEventListener('click', ()=>{
   sc.togglePause();
 });
 
-// resume button
 resumeBtn.addEventListener('click', ()=>{
   const sc = game.scene.keys['main'];
   if(!sc) return;
   sc.togglePause();
 });
 
-// restart from pause menu
 restartBtn.addEventListener('click', ()=>{
   const sc = game.scene.keys['main'];
   if(!sc) return;
   hidePauseMenu();
-  // stop music to avoid overlap
+  
   try{ if(sc.bgMusic && sc.bgMusic.isPlaying) sc.bgMusic.stop(); }catch(e){}
   try{ if(sc.bossMusic && sc.bossMusic.isPlaying) sc.bossMusic.stop(); }catch(e){}
   sc.scene.restart();
 });
 
-// restart from scoreboard
+
 restartAfterScore.addEventListener('click', ()=>{
   hideScoreboard();
   const sc = game.scene.keys['main'];
@@ -542,12 +571,12 @@ restartAfterScore.addEventListener('click', ()=>{
     try{ if(sc.bgMusic && sc.bgMusic.isPlaying) sc.bgMusic.stop(); }catch(e){}
     try{ if(sc.bossMusic && sc.bossMusic.isPlaying) sc.bossMusic.stop(); }catch(e){}
   }
-  // restart scene cleanly
+  
   game.scene.stop('main');
   game.scene.start('main');
 });
 
-// music slider
+
 musicSlider.addEventListener('input', (ev)=>{
   musicVolume = parseFloat(ev.target.value);
   saveAudioSettings();
@@ -559,14 +588,13 @@ musicSlider.addEventListener('input', (ev)=>{
   }
 });
 
-// sfx slider
+
 sfxSlider.addEventListener('input', (ev)=>{
   sfxVolume = parseFloat(ev.target.value);
   saveAudioSettings();
   // sfxVolume takes effect on subsequent this.sound.play calls (we multiplied plays by sfxVolume)
 });
 
-// hide pause if clicking outside (small UX)
 window.addEventListener('keydown', (e)=>{
   if(e.key==='Escape'){
     // escape closes pause menu if open
@@ -577,7 +605,6 @@ window.addEventListener('keydown', (e)=>{
   }
 });
 
-// ensure UI hidden initially
 hidePauseMenu();
 hideScoreboard();
 
