@@ -58,6 +58,7 @@
   <button id="restartAfterScore">Gioca di nuovo</button>
 </div>
 <script>
+const DEBUG=true;
 const DEFAULT_MUSIC_VOL = 0.25;
 const DEFAULT_SFX_VOL = 1.0;
 let musicVolume = parseFloat(localStorage.getItem('musicVolume'));
@@ -187,7 +188,7 @@ var Player=new Phaser.Class({Extends:Phaser.Physics.Arcade.Sprite,initialize:fun
   Phaser.Physics.Arcade.Sprite.call(this,s,x,y,'player');s.add.existing(this);s.physics.add.existing(this);
   if(ASSETS.enabled&&ASSETS.player){this.setScale(ASSETS.scales.player||1);}this.setSize(this.displayWidth,this.displayHeight,true);
   this.setCollideWorldBounds(true);this.hp=Math.max(3,PLAYER.START_HP||3);
-},damageOnce:function(){var sc=this.scene;if(this.setTintFill){this.setTintFill(0xffa500);if(sc&&sc.time){sc.time.delayedCall(120,()=>{if(this&&this.clearTint)this.clearTint();});}}if(!this.active)return;this.hp=Math.max(0,this.hp-1);this.scene.flash(this);this.scene.events.emit('hp',this.hp);if(this.hp<=0)this.scene.gameOver();}});
+},damageOnce:function(){var sc=this.scene;if(sc&&sc.god)return;if(this.setTintFill){this.setTintFill(0xffa500);if(sc&&sc.time){sc.time.delayedCall(120,()=>{if(this&&this.clearTint)this.clearTint();});}}if(!this.active)return;this.hp=Math.max(0,this.hp-1);this.scene.flash(this);this.scene.events.emit('hp',this.hp);if(this.hp<=0)this.scene.gameOver();}});
 
 var Enemy=new Phaser.Class({Extends:Phaser.Physics.Arcade.Sprite,initialize:function Enemy(s,x,y,tex,type,spd){
   Phaser.Physics.Arcade.Sprite.call(this,s,x,y,tex);s.add.existing(this);s.physics.add.existing(this);
@@ -246,7 +247,26 @@ init:function(){this.level=1;this.score=0;this.elapsed=0;this.spawnDelay=DIFF.BA
 create:function(){
   this.physics.world.isPaused=false;
   this.time.paused=false;
-  this.bg=this.add.image(W/2,H/2,'bg').setDisplaySize(W,H).setDepth(-2);
+  if(DEBUG){
+    this.time.timeScale=1;
+    this.physics.world.timeScale=1;
+    this.god=false;
+    this._fast=false;
+    this.input.keyboard.on('keydown-L',()=>this.ramp());
+    this.input.keyboard.on('keydown-B',()=>{ if(!this.bossActive) this.spawnBoss(); });
+    this.input.keyboard.on('keydown-G',()=>this.gameOver());
+    this.input.keyboard.on('keydown-H',()=>this.player.damageOnce());
+    this.input.keyboard.on('keydown-K',()=>{ try{ this.enemies.clear(true,true);}catch(e){} });
+    this.input.keyboard.on('keydown-V',()=>{ this.addScore(1000); });
+    this.input.keyboard.on('keydown-T',()=>{
+  this._fast=!this._fast;
+  const s=this._fast?4:1;
+  this.time.timeScale=s;
+  this.physics.world.timeScale=s;
+});
+    this.input.keyboard.on('keydown-M',()=>{ this.god=!this.god; });
+   }
+   this.bg=this.add.image(W/2,H/2,'bg').setDisplaySize(W,H).setDepth(-2);
   this.dim=this.add.rectangle(W/2,H/2,W,H,0x000000,0.35).setDepth(-1);
   if(this.sound&&this.sound.add){
     this.bgMusic=this.sound.add('bg_music',{loop:true,volume: musicVolume});
@@ -372,6 +392,10 @@ create:function(){
         ease: 'Sine.easeOut',
         onComplete: function(){
           try{ self.launchPowerRay(c); }catch(e){}
+          if(self.player && self.player.hp < PLAYER.MAX_HP){
+          self.player.hp = Math.min(PLAYER.MAX_HP, self.player.hp + 1);
+          self.events.emit('hp', self.player.hp);
+        }
           if(!isRedRayLevel(levelNow)){ self.activateShield(5000); }
           self.time.delayedCall(2400, function(){
             self.toastyTweenOut = self.tweens.add({
@@ -444,7 +468,7 @@ this.scale.on('resize',(g)=>{
 });
 },
 addScore:function(v){this.score+=v;this.scoreTxt.setText('Score: '+this.score);},
-ramp:function(){this.level++;this.levelTxt.setText('Lv '+this.level);var steps=Math.floor(this.level/2);this.spawnDelay=Math.max(DIFF.MIN,Math.floor(DIFF.BASE*Math.pow(0.96,steps)));this.bossSpawnedForLevel=false;
+ramp:function(){this.level++;this.levelTxt.setText('Lv '+this.level);var steps=Math.floor(this.level/2);this.spawnDelay=Math.max(DIFF.MIN,Math.floor(DIFF.BASE*Math.pow(0.985,Math.min(steps,33))));this.bossSpawnedForLevel=false;
 updateWeaponStats(this.level, this);
 if(isToastyLevel(this.level)){ if(this.showToasty) this.showToasty(this.level); }
 },
@@ -559,7 +583,7 @@ gameOver:function(){
   if(this.player.body) this.player.body.enable=false;
   this.physics.world.isPaused=true;
   this.time.paused=true;
-  this.add.text(W/2,H/2,'GAME OVER\\nScore: '+this.score,{fontSize:'36px',align:'center'}).setOrigin(.5);
+  this.add.text(W/2,H/2,'GAME OVER\nScore: '+this.score,{fontSize:'36px',align:'center'}).setOrigin(.5);
   this.add.text(W/2,H/2+80,'R per ricominciare',{fontSize:'16px'}).setOrigin(.5);
   try{ saveScore(this.score); }catch(e){}
   showScoreboardUI();
